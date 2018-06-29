@@ -43,7 +43,7 @@ func (s *server) TapByResource(req *public.TapByResourceRequest, stream pb.Tap_T
 		return status.Error(codes.InvalidArgument, "TapByResource received nil TapByResourceRequest")
 	}
 	if req.Target == nil {
-		return status.Errorf(codes.InvalidArgument, "TapByResource received nil target ResourceSelection: %+v", *req)
+		return status.Errorf(codes.InvalidArgument, "TapByResource received nil target ResourceSelection")
 	}
 
 	objects, err := s.k8sAPI.GetObjects(req.Target.Resource.Namespace, req.Target.Resource.Type, req.Target.Resource.Name)
@@ -62,7 +62,7 @@ func (s *server) TapByResource(req *public.TapByResourceRequest, stream pb.Tap_T
 	}
 
 	if len(pods) == 0 {
-		return status.Errorf(codes.NotFound, "no pods found for ResourceSelection: %+v", *req.Target)
+		return status.Errorf(codes.NotFound, "no pods found for ResourceSelection")
 	}
 
 	log.Infof("Tapping %d pods for target: %+v", len(pods), *req.Target.Resource)

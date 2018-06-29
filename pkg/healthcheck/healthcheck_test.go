@@ -1,9 +1,9 @@
 package healthcheck
 
 import (
-	"reflect"
 	"testing"
 
+	"github.com/golang/protobuf/proto"
 	healthcheckPb "github.com/runconduit/conduit/controller/gen/common/healthcheck"
 )
 
@@ -69,15 +69,19 @@ func TestSelfChecker(t *testing.T) {
 			t.Fatalf("Expecting observed check to contain [%d] check, got [%d]", expectedLength, observedLength)
 		}
 
-		observedResultsSet := make(map[healthcheckPb.CheckResult]bool)
-		for _, result := range observedResults {
-			observedResultsSet[*result] = true
+		contains := func(expected *healthcheckPb.CheckResult) bool {
+			for _, result := range observedResults {
+				if proto.Equal(result, expected) {
+					return true
+				}
+			}
+			return false
 		}
 
 		for _, expected := range expectedResults {
-			if !observedResultsSet[*expected] {
+			if !contains(expected) {
 				t.Fatalf("Expected observed results to contain [%v], but was: %v", expected,
-					reflect.ValueOf(observedResultsSet).MapKeys())
+					observedResults)
 			}
 		}
 	})

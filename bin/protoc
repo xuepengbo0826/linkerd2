@@ -10,7 +10,7 @@ fi
 arch=$(uname -m)
 
 protocbin=.protoc
-protocversion=3.4.0
+protocversion=3.6.0
 protocurl="https://github.com/google/protobuf/releases/download/v${protocversion}/protoc-${protocversion}-${os}-${arch}.zip"
 
 if [ ! -f "$protocbin" ]; then

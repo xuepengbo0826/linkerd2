@@ -30,6 +30,12 @@ type resourceResult struct {
 	err error
 }
 
+type resourceKey struct {
+	name         string
+	namespace    string
+	resourceType string
+}
+
 type k8sStat struct {
 	object   metav1.Object
 	podStats *podStats
@@ -135,14 +141,14 @@ func statSummaryError(req *pb.StatSummaryRequest, message string) *pb.StatSummar
 	}
 }
 
-func (s *grpcServer) getKubernetesObjectStats(req *pb.StatSummaryRequest) (map[pb.Resource]k8sStat, error) {
+func (s *grpcServer) getKubernetesObjectStats(req *pb.StatSummaryRequest) (map[resourceKey]k8sStat, error) {
 	requestedResource := req.GetSelector().GetResource()
 	objects, err := s.k8sAPI.GetObjects(requestedResource.Namespace, requestedResource.Type, requestedResource.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	objectMap := map[pb.Resource]k8sStat{}
+	objectMap := map[resourceKey]k8sStat{}
 
 	for _, object := range objects {
 		metaObj, err := meta.Accessor(object)
@@ -150,10 +156,10 @@ func (s *grpcServer) getKubernetesObjectStats(req *pb.StatSummaryRequest) (map[p
 			return nil, err
 		}
 
-		key := pb.Resource{
-			Name:      metaObj.GetName(),
-			Namespace: metaObj.GetNamespace(),
-			Type:      requestedResource.GetType(),
+		key := resourceKey{
+			name:         metaObj.GetName(),
+			namespace:    metaObj.GetNamespace(),
+			resourceType: requestedResource.GetType(),
 		}
 
 		podStats, err := s.getPodStats(object)
@@ -226,12 +232,13 @@ func (s *grpcServer) nonK8sResourceQuery(ctx context.Context, req *pb.StatSummar
 	}
 	rows := make([]*pb.StatTable_PodGroup_Row, 0)
 
-	for resourceKey, metrics := range requestMetrics {
-		resource := resourceKey
-		resource.Type = req.GetSelector().GetResource().GetType()
-
+	for key, metrics := range requestMetrics {
 		row := pb.StatTable_PodGroup_Row{
-			Resource:   &resource,
+			Resource: &pb.Resource{
+				Name:      key.name,
+				Namespace: key.namespace,
+				Type:      req.GetSelector().GetResource().GetType(),
+			},
 			TimeWindow: req.TimeWindow,
 			Stats:      metrics,
 		}
@@ -255,10 +262,10 @@ func isNonK8sResourceQuery(resourceType string) bool {
 // get the list of objects for which we want to return results
 func getResultKeys(
 	req *pb.StatSummaryRequest,
-	k8sObjects map[pb.Resource]k8sStat,
-	metricResults map[pb.Resource]*pb.BasicStats,
-) []pb.Resource {
-	var keys []pb.Resource
+	k8sObjects map[resourceKey]k8sStat,
+	metricResults map[resourceKey]*pb.BasicStats,
+) []resourceKey {
+	var keys []resourceKey
 
 	if req.GetOutbound() == nil || req.GetNone() != nil {
 		// if the request doesn't have outbound filtering, return all rows
@@ -370,7 +377,7 @@ func buildRequestLabels(req *pb.StatSummaryRequest) (labels model.LabelSet, labe
 	return
 }
 
-func (s *grpcServer) getPrometheusMetrics(ctx context.Context, req *pb.StatSummaryRequest, timeWindow string) (map[pb.Resource]*pb.BasicStats, error) {
+func (s *grpcServer) getPrometheusMetrics(ctx context.Context, req *pb.StatSummaryRequest, timeWindow string) (map[resourceKey]*pb.BasicStats, error) {
 	reqLabels, groupBy := buildRequestLabels(req)
 	resultChan := make(chan promResult)
 
@@ -419,8 +426,8 @@ func (s *grpcServer) getPrometheusMetrics(ctx context.Context, req *pb.StatSumma
 	return processPrometheusMetrics(req, results, groupBy), nil
 }
 
-func processPrometheusMetrics(req *pb.StatSummaryRequest, results []promResult, groupBy model.LabelNames) map[pb.Resource]*pb.BasicStats {
-	basicStats := make(map[pb.Resource]*pb.BasicStats)
+func processPrometheusMetrics(req *pb.StatSummaryRequest, results []promResult, groupBy model.LabelNames) map[resourceKey]*pb.BasicStats {
+	basicStats := make(map[resourceKey]*pb.BasicStats)
 
 	for _, result := range results {
 		for _, sample := range result.vec {
@@ -465,17 +472,17 @@ func extractSampleValue(sample *model.Sample) uint64 {
 	return value
 }
 
-func metricToKey(req *pb.StatSummaryRequest, metric model.Metric, groupBy model.LabelNames) pb.Resource {
+func metricToKey(req *pb.StatSummaryRequest, metric model.Metric, groupBy model.LabelNames) resourceKey {
 	// this key is used to match the metric stats we queried from prometheus
 	// with the k8s object stats we queried from k8s
 	// ASSUMPTION: this code assumes that groupBy is always ordered (..., namespace, name)
-	key := pb.Resource{
-		Type: req.GetSelector().GetResource().GetType(),
-		Name: string(metric[groupBy[len(groupBy)-1]]),
+	key := resourceKey{
+		name:         string(metric[groupBy[len(groupBy)-1]]),
+		resourceType: req.GetSelector().GetResource().GetType(),
 	}
 
 	if len(groupBy) == 2 {
-		key.Namespace = string(metric[groupBy[0]])
+		key.namespace = string(metric[groupBy[0]])
 	}
 
 	return key
